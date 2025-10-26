@@ -15,10 +15,10 @@ class TFLiteService {
   Future<void> loadModel() async {
     try {
       // Load TFLite model ( path relative to pubspec.yaml)
-      _interpreter = await Interpreter.fromAsset('assets/models/model_unquant.tflite');
+      _interpreter = await Interpreter.fromAsset('assets/models/currency_model_compatible.tflite');
 
       // Load labels (string assets keep "assets/" prefix)
-      final raw = await rootBundle.loadString('assets/models/labels.txt');
+      final raw = await rootBundle.loadString('assets/models/l.txt');
       _labels = raw
           .split('\n')
           .map((e) => e.trim())

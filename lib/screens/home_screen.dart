@@ -3,12 +3,16 @@ import 'package:provider/provider.dart';
 import 'package:vision_vox/screens/note_detection_screen.dart';
 import 'package:vision_vox/screens/text_to_speech_screen.dart';
 import 'package:vision_vox/screens/navigation_screen.dart';
-import 'package:vision_vox/screens/object_detection_screen.dart';
+import 'package:vision_vox/screens/raspberry_pi_screen.dart';
 import 'package:vision_vox/services/tts_service.dart';
 import 'package:vision_vox/widgets/feature_card.dart';
 
+// NEW import for PathGuideScreen (fixed)
+import 'package:vision_vox/screens/path_guide_screen.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
@@ -20,8 +24,8 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final tts = Provider.of<TtsService>(context, listen: false);
       tts.speak(
-        "Welcome to Vision Vox. You have four options. "
-        "Text to Speech, Note Detection, Navigation, and Object Detection. "
+        "Welcome to Vision Vox. You have five options. "
+        "Text to Speech, Note Detection, Navigation, Real-time Navigation, and Raspberry Pi. "
         "Single tap to hear the feature name, double tap to open."
       );
     });
@@ -135,26 +139,46 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
               const SizedBox(height: 16),
-            // Object Detection
-            FeatureCard(
-              title: 'Object Detection',
-              caption: 'Identify surrounding objects',
-              icon: Icons.camera_alt, // changed from camera_search_rounded
-              accentBlend: true,
-              onTapAction: () {
-                tts.speak("Object Detection. Double tap to open this feature.");
-              },
-              onDoubleTapAction: () {
-                tts.speak("Opening Object Detection");
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ObjectDetectionScreen(),
-                  ),
-                );
-              },
-            ),
 
+              // // NEW: AI Navigation -> now opens PathGuideScreen
+              // FeatureCard(
+              //   title: 'AI Navigation',
+              //   caption: 'Live camera guidance (left/right)',
+              //   icon: Icons.directions_run_rounded,
+              //   onTapAction: () {
+              //     tts.speak("AI Navigation. Double tap to open this feature.");
+              //   },
+              //   onDoubleTapAction: () {
+              //     tts.speak("Opening AI Navigation");
+              //     Navigator.push(
+              //       context,
+              //       MaterialPageRoute(
+              //         builder: (_) => const PathGuideScreen(),
+              //       ),
+              //     );
+              //   },
+              // ),
+              // const SizedBox(height: 16),
+
+              // Raspberry Pi Connection
+              FeatureCard(
+                title: 'Raspberry Pi',
+                caption: 'Connect and control',
+                icon: Icons.developer_board_rounded,
+                onTapAction: () {
+                  tts.speak("Raspberry Pi Connection. Double tap to open this feature.");
+                },
+                onDoubleTapAction: () {
+                  tts.speak("Opening Raspberry Pi Connection");
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const RaspberryPiScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
             ],
           ),
         ),

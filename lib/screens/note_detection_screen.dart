@@ -23,25 +23,21 @@ class _NoteDetectionScreenState extends State<NoteDetectionScreen> {
   void initState() {
     super.initState();
 
-    // Configure TTS voice
     _flutterTts.setLanguage("en-IN"); // Indian English
     _flutterTts.setSpeechRate(0.45);  // slower for clarity
     _flutterTts.setPitch(1.0);
 
-    // Speak when screen opens
     _speak("Note Detection. Please point your camera at an Indian banknote.");
-    _speak("Click on note dectect button at the bottom screen to detect note.");
-
+    _speak("Click on detect note button at the bottom of the screen to detect note.");
 
     _initModel();
-    
   }
 
   Future<void> _initModel() async {
     setState(() {
       _status = "Loading AI model...";
     });
-    _speak("Loading  model, please wait.");
+    _speak("Loading model, please wait.");
     try {
       await _tfliteService.loadModel();
       setState(() {
@@ -89,7 +85,7 @@ class _NoteDetectionScreenState extends State<NoteDetectionScreen> {
       final result = await _tfliteService.runModelOnImage(image);
 
       setState(() {
-        _status = 'Detected: $result';
+        _status = 'Detected: ₹$result note';
       });
 
       _speak("Detected. $result rupees note.");
@@ -100,6 +96,13 @@ class _NoteDetectionScreenState extends State<NoteDetectionScreen> {
       _speak("Error detecting the note.");
     }
   }
+
+   @override
+  void dispose() {
+    _tfliteService.close(); // changed from dispose() → close()
+    super.dispose();
+  }
+
 
   @override
   Widget build(BuildContext context) {
