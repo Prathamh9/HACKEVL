@@ -1,99 +1,255 @@
 import 'dart:io';
-import 'package:flutter/services.dart' show rootBundle;
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
-import 'package:tflite_flutter/tflite_flutter.dart';
 
 class TFLiteService {
-  Interpreter? _interpreter;
-  List<String> _labels = [];
-
-  // Helpers for image package
-  double _r(img.Pixel p) => p.r.toDouble();
-  double _g(img.Pixel p) => p.g.toDouble();
-  double _b(img.Pixel p) => p.b.toDouble();
+  static const String _apiUrl = 'https://wolfvox-notedetectionmodel.hf.space';
+  bool _initialized = false;
 
   Future<void> loadModel() async {
+    // No local model to load - we use the API
+    // Just mark as initialized
+    _initialized = true;
+    print(' API service initialized | endpoint=$_apiUrl');
+  }
+
+  Future<String> runModelOnImage(File imageFile, {bool debug = false}) async {
+    if (!_initialized) {
+      throw Exception('Service not initialized. Call loadModel() first.');
+    }
+
     try {
-      // Load TFLite model ( path relative to pubspec.yaml)
-      _interpreter = await Interpreter.fromAsset('assets/models/currency_model_compatible.tflite');
+      // Read and compress image to reduce upload size
+      final originalBytes = await imageFile.readAsBytes();
+      print(' Original image size: ${originalBytes.length} bytes');
+      
+      // Decode, resize, and re-encode as JPEG with compression
+      final decoded = img.decodeImage(originalBytes);
+      if (decoded == null) {
+        return 'Error: Could not decode image';
+      }
+      
+      // Resize to max 640px on longest side (model input size)
+      final maxSize = 640;
+      img.Image resized;
+      if (decoded.width > decoded.height) {
+        resized = decoded.width > maxSize 
+            ? img.copyResize(decoded, width: maxSize)
+            : decoded;
+      } else {
+        resized = decoded.height > maxSize 
+            ? img.copyResize(decoded, height: maxSize)
+            : decoded;
+      }
+      
+      // Encode as JPEG with 85% quality
+      final compressedBytes = img.encodeJpg(resized, quality: 85);
+      print(' Compressed image size: ${compressedBytes.length} bytes');
+      
+      final base64Image = base64Encode(compressedBytes);
+      final dataUri = 'data:image/jpeg;base64,$base64Image';
 
-      // Load labels (string assets keep "assets/" prefix)
-      final raw = await rootBundle.loadString('assets/models/l.txt');
-      _labels = raw
-          .split('\n')
-          .map((e) => e.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
+      print(' Sending image to API (${compressedBytes.length} bytes)');
 
-      // Log shapes
-      final inShape = _interpreter!.getInputTensor(0).shape;
-      final outShape = _interpreter!.getOutputTensor(0).shape;
-      print(" Model loaded | labels=${_labels.length} | in=$inShape out=$outShape");
-    } catch (e) {
-      print(' Failed to load model: $e');
-      rethrow;
-    }
-  }
-
-  Future<String> runModelOnImage(File imageFile) async {
-    final interpreter = _interpreter;
-    if (interpreter == null) {
-      throw Exception('Interpreter not initialized. Call loadModel() first.');
-    }
-
-    // Decode image
-    final decoded = img.decodeImage(await imageFile.readAsBytes());
-    if (decoded == null) throw Exception('Could not decode image');
-
-    // Read expected input shape dynamically [1, H, W, C]
-    final inputShape = interpreter.getInputTensor(0).shape;
-    final height = inputShape[1];
-    final width = inputShape[2];
-    final channels = inputShape.length >= 4 ? inputShape[3] : 3;
-
-    // Resize
-    final resized = img.copyResize(decoded, width: width, height: height);
-
-    // Build input tensor [1, H, W, C]
-    final input = List.generate(
-      1,
-      (_) => List.generate(
-        height,
-        (y) => List.generate(
-          width,
-          (x) {
-            final p = resized.getPixelSafe(x, y);
-            if (channels == 3) {
-              return [_r(p) / 255.0, _g(p) / 255.0, _b(p) / 255.0];
-            } else {
-              final gray =
-                  (_r(p) * 0.299 + _g(p) * 0.587 + _b(p) * 0.114) / 255.0;
-              return [gray];
+      // Gradio 6.x uses /gradio_api/call/{api_name} with SSE
+      // Step 1: Submit the job
+      final submitResponse = await http.post(
+        Uri.parse('$_apiUrl/gradio_api/call/predict'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'data': [
+            {
+              'url': dataUri,
+              'meta': {'_type': 'gradio.FileData'}
             }
-          },
-        ),
-      ),
-    );
+          ],
+        }),
+      ).timeout(const Duration(seconds: 30));
+      
+      print(' Submit response: ${submitResponse.statusCode} - ${submitResponse.body}');
+      
+      if (submitResponse.statusCode != 200) {
+        return 'API error: ${submitResponse.statusCode}';
+      }
+      
+      // Get the event_id from response
+      final submitResult = jsonDecode(submitResponse.body);
+      final eventId = submitResult['event_id'];
+      
+      if (eventId == null) {
+        print(' No event_id in response');
+        return 'Detection failed';
+      }
+      
+      // Step 2: Get the result using SSE endpoint
+      print(' Fetching result for event_id: $eventId');
+      final resultResponse = await http.get(
+        Uri.parse('$_apiUrl/gradio_api/call/predict/$eventId'),
+      ).timeout(const Duration(seconds: 60));
+      
+      print(' Result response: ${resultResponse.statusCode}');
+      print(' Result body: ${resultResponse.body}');
+      
+      // Parse SSE response - look for "data:" lines
+      final lines = resultResponse.body.split('\n');
+      String? jsonData;
+      for (final line in lines) {
+        if (line.startsWith('data:')) {
+          jsonData = line.substring(5).trim();
+        }
+      }
+      
+      if (jsonData == null || jsonData.isEmpty) {
+        return 'No result from API';
+      }
+      
+      final result = jsonDecode(jsonData);
+      print(' Parsed result: $result');
 
-    // Prepare output buffer
-    final outputShape = interpreter.getOutputTensor(0).shape; // e.g. [1, N]
-    final numClasses = outputShape.last;
-    final output = List.generate(1, (_) => List.filled(numClasses, 0.0));
-
-    // Run inference
-    interpreter.run(input, output);
-
-    // Convert to double list
-    final probs = output[0].cast<double>();
-
-    // Argmax
-    final maxIdx = probs.indexOf(probs.reduce((a, b) => a > b ? a : b));
-    final label =
-        (maxIdx >= 0 && maxIdx < _labels.length) ? _labels[maxIdx] : 'Unknown';
-
-    print(' Prediction: $label (p=${probs[maxIdx]})');
-    return label;
+      // Parse the detection result and extract currency info
+      return _parseDetectionResult(result);
+    } catch (e) {
+      print(' API call failed: $e');
+      return 'Error detecting currency';
+    }
   }
 
-  void close() => _interpreter?.close();
+  // Parse the API response and extract currency denomination
+  String _parseDetectionResult(dynamic result) {
+    try {
+      // Gradio returns [data] array in result
+      if (result is List && result.isNotEmpty) {
+        final prediction = result[0];
+        
+        // If it's a Map with detections
+        if (prediction is Map) {
+          // Check for detections array (YOLO format)
+          if (prediction['detections'] != null && prediction['detections'] is List) {
+            final detections = prediction['detections'] as List;
+            if (detections.isNotEmpty) {
+              // Get the detection with highest confidence
+              var bestDetection = detections[0];
+              double bestConf = 0.0;
+              
+              for (final det in detections) {
+                final conf = (det['confidence'] ?? det['score'] ?? 0).toDouble();
+                if (conf > bestConf) {
+                  bestConf = conf;
+                  bestDetection = det;
+                }
+              }
+              
+              final className = bestDetection['class_name'] ?? 
+                               bestDetection['class'] ?? 
+                               bestDetection['label'] ?? 
+                               bestDetection['name'] ?? '';
+              print(' Best detection: $bestDetection');
+              print(' Class name: $className, confidence: $bestConf');
+              return _extractCurrencyValue(className.toString());
+            }
+          }
+          
+          // Check for direct label/class field
+          if (prediction['label'] != null) {
+            return _extractCurrencyValue(prediction['label'].toString());
+          }
+          if (prediction['class'] != null) {
+            return _extractCurrencyValue(prediction['class'].toString());
+          }
+          if (prediction['prediction'] != null) {
+            return _extractCurrencyValue(prediction['prediction'].toString());
+          }
+          
+          // Check for results array
+          if (prediction['results'] != null && prediction['results'] is List) {
+            final results = prediction['results'] as List;
+            if (results.isNotEmpty) {
+              final first = results[0];
+              final label = first['label'] ?? first['class'] ?? first['name'] ?? '';
+              return _extractCurrencyValue(label.toString());
+            }
+          }
+          
+          // Return the whole thing formatted if nothing specific found
+          return _extractCurrencyValue(prediction.toString());
+        }
+        
+        // If it's just a string
+        if (prediction is String) {
+          return _extractCurrencyValue(prediction);
+        }
+        
+        return _extractCurrencyValue(prediction.toString());
+      }
+      
+      // Handle Map result directly
+      if (result is Map) {
+        if (result['label'] != null) {
+          return _extractCurrencyValue(result['label'].toString());
+        }
+        return _extractCurrencyValue(result.toString());
+      }
+      
+      return 'No currency detected';
+    } catch (e) {
+      print(' Error parsing result: $e');
+      return 'Detection error';
+    }
+  }
+
+  // Extract just the currency value - return only the number
+  String _extractCurrencyValue(String raw) {
+    print(' Extracting currency from: $raw');
+    
+    // Common patterns: "100_rupees", "Rs100", "100 Rupees", "₹100", "10-rupee"
+    final patterns = [
+      RegExp(r'(\d+)\s*[_-]?\s*rupees?', caseSensitive: false),
+      RegExp(r'Rs\.?\s*(\d+)', caseSensitive: false),
+      RegExp(r'₹\s*(\d+)'),
+      RegExp(r'(\d+)\s*Rs', caseSensitive: false),
+      RegExp(r'INR\s*(\d+)', caseSensitive: false),
+      RegExp(r'(\d+)\s*INR', caseSensitive: false),
+    ];
+    
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(raw);
+      if (match != null) {
+        final value = match.group(1);
+        if (value != null) {
+          print(' Extracted denomination: $value');
+          return value; // Just return the number
+        }
+      }
+    }
+    
+    // Check for just a number (10, 20, 50, 100, 200, 500, 2000)
+    final validDenominations = ['2000', '500', '200', '100', '50', '20', '10'];
+    for (final denom in validDenominations) {
+      if (raw.contains(denom)) {
+        print(' Found denomination: $denom');
+        return denom; // Just return the number
+      }
+    }
+    
+    // Fallback - return cleaned string
+    String cleaned = raw
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ')
+        .replaceAll(RegExp(r'[{}"\[\]]'), '')
+        .trim();
+    
+    if (cleaned.isEmpty || cleaned == 'null') {
+      return 'unknown';
+    }
+    
+    return cleaned;
+  }
+
+  void close() {
+    // Nothing to close for API-based service
+    _initialized = false;
+  }
 }

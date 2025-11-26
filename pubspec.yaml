@@ -9,6 +9,7 @@
   dependencies:
     flutter:
       sdk: flutter
+    http: ^1.2.0
     google_generative_ai: ^0.4.1 
     provider: ^6.1.2
     tflite_flutter: ^0.11.0
@@ -47,6 +48,4 @@
     
     assets:
       - assets/models/l.txt
-      - assets/models/currency_model_compatible.tflite
-      
-      
+      - assets/models/best_float16.tflite

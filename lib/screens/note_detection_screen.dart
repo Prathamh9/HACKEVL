@@ -82,13 +82,25 @@ class _NoteDetectionScreenState extends State<NoteDetectionScreen> {
     _speak("Processing the note, please wait.");
 
     try {
-      final result = await _tfliteService.runModelOnImage(image);
+      // Enable debug to print detailed model output diagnostics
+      final result = await _tfliteService.runModelOnImage(image, debug: true);
 
+      // Check if result is a valid denomination number
+      final isValidNumber = int.tryParse(result) != null;
+      
       setState(() {
-        _status = 'Detected: ₹$result note';
+        if (isValidNumber) {
+          _status = 'Detected: ₹$result note';
+        } else {
+          _status = 'Result: $result';
+        }
       });
 
-      _speak("Detected. $result rupees note.");
+      if (isValidNumber) {
+        _speak("Detected. $result rupees note.");
+      } else {
+        _speak(result);
+      }
     } catch (e) {
       setState(() {
         _status = "Error: ${e.toString()}";

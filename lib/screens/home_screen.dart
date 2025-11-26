@@ -25,7 +25,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final tts = Provider.of<TtsService>(context, listen: false);
       tts.speak(
         "Welcome to Vision Vox. You have five options. "
-        "Text to Speech, Note Detection, Navigation, Real-time Navigation, and Raspberry Pi. "
+        "Text to Speech, Note Detection, andNavigation. "
         "Single tap to hear the feature name, double tap to open."
       );
     });
@@ -160,24 +160,24 @@ class _HomeScreenState extends State<HomeScreen> {
               // ),
               // const SizedBox(height: 16),
 
-              // Raspberry Pi Connection
-              FeatureCard(
-                title: 'Raspberry Pi',
-                caption: 'Connect and control',
-                icon: Icons.developer_board_rounded,
-                onTapAction: () {
-                  tts.speak("Raspberry Pi Connection. Double tap to open this feature.");
-                },
-                onDoubleTapAction: () {
-                  tts.speak("Opening Raspberry Pi Connection");
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const RaspberryPiScreen(),
-                    ),
-                  );
-                },
-              ),
+              //  Raspberry Pi Connection
+              // FeatureCard(
+              //   title: 'Raspberry Pi',
+              //   caption: 'Connect and control',
+              //   icon: Icons.developer_board_rounded,
+              //   onTapAction: () {
+              //     tts.speak("Raspberry Pi Connection. Double tap to open this feature.");
+              //   },
+              //   onDoubleTapAction: () {
+              //     tts.speak("Opening Raspberry Pi Connection");
+              //     Navigator.push(
+              //       context,
+              //       MaterialPageRoute(
+              //         builder: (_) => const RaspberryPiScreen(),
+              //       ),
+              //     );
+              //   },
+              // ),
               const SizedBox(height: 16),
             ],
           ),
